@@ -650,10 +650,11 @@ async function readTable(prompt,files){
       res=await m.generateContent(parts);goodModel=name;break}
     catch(e){last=e;console.warn('[AI]',name,e);
       const msg=String((e&&e.message)||e)+' '+JSON.stringify((e&&e.customErrorData)||{});
+      if(/genai config/i.test(msg))break;
       if(/404|not.?found|NOT_FOUND|is not supported|unsupported model|no longer available/i.test(msg))continue;
       break}}
   if(!res){const e=last||{};const m=(e.code?e.code+' · ':'')+String(e.message||e)+(e.customErrorData?' · '+JSON.stringify(e.customErrorData).slice(0,200):'');
-    throw{code:/429|quota|RESOURCE_EXHAUSTED/i.test(m)?'rate_limited':/not been used|disabled|not enabled|PERMISSION_DENIED|403|api-not-enabled/i.test(m)?'ai_disabled':'ai_error',message:m}}
+    throw{code:/429|quota|RESOURCE_EXHAUSTED/i.test(m)?'rate_limited':/genai config|not been used|disabled|not enabled|PERMISSION_DENIED|403|api-not-enabled/i.test(m)?'ai_disabled':'ai_error',message:m}}
   const t=res.response.text();
   try{return JSON.parse(t)}catch(_){const mm=t.match(/\[[\s\S]*\]/);if(mm){try{return JSON.parse(mm[0])}catch(__){}}throw{code:'invalid_json'}}}
 
@@ -1218,7 +1219,7 @@ async function readImages(files){
   }catch(e){
     if(ctl!==ocrCtl)return;
     if(e&&e.code==='cancelled'){st.textContent='이미지 읽기를 중지했어요.';}
-    else{o.classList.add('bad');st.textContent=ocrCodeMsg(e&&e.code)+(e&&e.message&&e.code!=='invalid_json'?' [상세: '+String(e.message).slice(0,180)+']':'')}
+    else{o.classList.add('bad');st.textContent=ocrCodeMsg(e&&e.code)+(e&&e.message&&e.code!=='invalid_json'?' [상세: '+String(e.message).slice(0,320)+']':'')}
   }finally{if(ctl===ocrCtl){$('#ocrStop').hidden=true;ocrCtl=null;updImpInfo()}}}
 $('#ocrStop').addEventListener('click',()=>{if(ocrCtl)ocrCtl.abort()});
 $('#impGo').addEventListener('click',async()=>{
