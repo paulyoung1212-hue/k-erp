@@ -428,6 +428,11 @@ textarea{width:100%;min-height:120px;border:1px solid var(--line-strong);border-
         <input type="file" id="seedFile" accept="application/json,.json" hidden>
         <span class="small" id="seedMsg"></span>
       </div>
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <label class="small" for="relayUrl">이미지 인식 중계 주소</label>
+        <input type="text" id="relayUrl" placeholder="https://script.google.com/macros/s/.../exec" style="flex:1 1 320px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit">
+        <button class="btn sm" type="button" id="relaySave">저장</button>
+      </div>
     </details>
   </section>
 
@@ -638,7 +643,19 @@ async function profiles(ids){
 const AI_MODELS=[AI_MODEL,'gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash'];
 let aiInst=null,goodModel=null;
 const toB64=f=>new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=bad;r.readAsDataURL(f)});
+let relayUrl;
+async function getRelay(){if(relayUrl===undefined){try{const d=await getDoc(doc(fs,'settings','ai'));relayUrl=d.exists()?(d.data().relayUrl||''):''}catch(_){relayUrl=''}}return relayUrl}
+const parseRows=t=>{try{return JSON.parse(t)}catch(_){const mm=String(t).match(/\[[\s\S]*\]/);if(mm){try{return JSON.parse(mm[0])}catch(__){}}throw{code:'invalid_json'}}};
 async function readTable(prompt,files){
+  const relay=await getRelay();
+  if(relay){
+    const idToken=await auth.currentUser.getIdToken();
+    const images=await Promise.all(files.map(async f=>({mime:f.type||'image/png',data:await toB64(f)})));
+    let j;
+    try{const r=await fetch(relay,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({idToken,prompt,images})});j=await r.json()}
+    catch(e){throw{code:'ai_error',message:'중계 스크립트에 연결하지 못했어요 ('+(e&&e.message||e)+')'}}
+    if(!j||!j.ok)throw{code:(j&&j.code)||'ai_error',message:(j&&j.message)||''};
+    return parseRows(j.text)}
   if(!aiInst)aiInst=getAI(app,{backend:new GoogleAIBackend()});
   const parts=[{text:prompt}];
   for(const f of files)parts.push({inlineData:{mimeType:f.type||'image/png',data:await toB64(f)}});
@@ -679,7 +696,9 @@ window.FB={
   watchMembers:cb=>onSnapshot(collection(fs,'members'),q=>cb(toList(q)),()=>cb([])),
   approve:async r=>{const b=writeBatch(fs);b.set(doc(fs,'members',r.id),{role:'admin',email:r.email||'',name:r.name||'',since:Date.now()});b.delete(doc(fs,'accessRequests',r.id));await b.commit()},
   reject:id=>deleteDoc(doc(fs,'accessRequests',id)),
-  removeMember:id=>deleteDoc(doc(fs,'members',id))
+  removeMember:id=>deleteDoc(doc(fs,'members',id)),
+  getRelay,
+  setRelay:async url=>{await setDoc(doc(fs,'settings','ai'),{relayUrl:url||''});relayUrl=url||''}
 };
 window.dispatchEvent(new Event('fb-ready'));
 
@@ -1467,6 +1486,8 @@ function lockWrite(){canWrite=false;$('#fab').hidden=true;$('#addPanel').hidden=
     FB.watchMembers(list=>{
       $('#memberList').innerHTML=list.map(m=>`<div class="req-item"><span class="who"><b>${esc(m.name||'(이름 없음)')}</b><small>${esc(m.email||'')} · ${m.role==='admin'?'관리자':esc(m.role||'')}</small></span>${FB.isOwnerEmail(m.email)?'<span class="small">최종관리자</span>':`<button class="btn sm" type="button" data-rm="${esc(m.id)}">권한 해제</button>`}</div>`).join('');
       $('#memberList').onclick=async ev=>{const b=ev.target.closest('[data-rm]');if(!b)return;b.disabled=true;try{await FB.removeMember(b.dataset.rm);toast('권한을 해제했어요')}catch(e){b.disabled=false;toast(writeErr(e))}}});
+    FB.getRelay().then(u=>{$('#relayUrl').value=u||''});
+    $('#relaySave').addEventListener('click',async()=>{const v=$('#relayUrl').value.trim();if(v&&!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v)){toast('앱스 스크립트 웹앱 주소(…/exec)를 넣어 주세요');return}try{await FB.setRelay(v);toast(v?'이미지 인식 중계 주소를 저장했어요':'중계 주소를 지웠어요')}catch(e){toast(writeErr(e))}});
     $('#seedFile').addEventListener('change',async ev=>{
       const f=ev.target.files[0];ev.target.value='';if(!f)return;const m=$('#seedMsg');
       try{const data=JSON.parse(await f.text());
