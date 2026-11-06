@@ -715,7 +715,7 @@ async function readTable(prompt,files){
       if(/404|not.?found|NOT_FOUND|is not supported|unsupported model|no longer available/i.test(msg))continue;
       break}}
   if(!res){const e=last||{};const m=(e.code?e.code+' · ':'')+String(e.message||e)+(e.customErrorData?' · '+JSON.stringify(e.customErrorData).slice(0,200):'');
-    throw{code:/abort|timeout|timed out/i.test(m)?'ai_timeout':/429|quota|RESOURCE_EXHAUSTED/i.test(m)?'rate_limited':/genai config|not been used|disabled|not enabled|PERMISSION_DENIED|403|api-not-enabled/i.test(m)?'ai_disabled':'ai_error',message:m}}
+    throw{code:/prepayment|credits are depleted|\b402\b/i.test(m)?'ai_credit':/abort|timeout|timed out/i.test(m)?'ai_timeout':/429|quota|RESOURCE_EXHAUSTED/i.test(m)?'rate_limited':/genai config|not been used|disabled|not enabled|PERMISSION_DENIED|403|api-not-enabled/i.test(m)?'ai_disabled':'ai_error',message:m}}
   const t=res.response.text();
   try{return JSON.parse(t)}catch(_){const mm=t.match(/\[[\s\S]*\]/);if(mm){try{return JSON.parse(mm[0])}catch(__){}}throw{code:'invalid_json'}}}
 
@@ -1250,6 +1250,7 @@ function ocrReset(){if(ocrCtl)ocrCtl.abort();ocrCtl=null;const o=$('#ocr');o.hid
 function ocrCodeMsg(c){
   if(c==='ai_disabled')return'AI 이미지 인식이 아직 켜져 있지 않아요. Firebase 콘솔 → AI Logic에서 Gemini Developer API를 사용 설정해 주세요.';
   if(c==='ai_error')return'AI가 이미지를 읽지 못했어요. 잠시 후 다시 붙여넣어 주세요.';
+  if(c==='ai_credit')return'Gemini 선불 잔액이 떨어졌어요. 최종관리자가 Google AI Studio › 결제에서 크레딧을 충전하면 바로 다시 됩니다.';
   if(c==='ai_timeout')return'AI가 여러 모델로 시도했지만 모두 30초 안에 답하지 않았어요. Google 쪽 혼잡일 가능성이 커요. 잠시 후 다시 시도해 주세요.';
   if(c==='not_granted')return'Claude 사용이 허용되지 않아 이미지를 읽지 못했어요. 페이지를 다시 열고 허용 창에서 허용해 주세요.';
   if(c==='images_unavailable'||c==='not_declared')return'AI 연결을 불러오지 못했어요. 페이지를 새로고침해 주세요.';
