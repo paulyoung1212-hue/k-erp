@@ -675,7 +675,7 @@ async function profiles(ids){
   return out}
 
 /* Image → rows: the page sends its own prompt and the images, and expects JSON back. */
-const AI_MODELS=[AI_MODEL,'gemini-3.5-flash','gemini-3.7-flash','gemini-3.5-flash-lite','gemini-2.5-flash'];
+const AI_MODELS=[AI_MODEL,'gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash'];
 let aiInst=null,goodModel=null,thinkOk=true;
 const toB64=f=>new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=bad;r.readAsDataURL(f)});
 let relayUrl;
@@ -696,20 +696,22 @@ async function readTable(prompt,files){
   for(const f of files)parts.push({inlineData:{mimeType:f.type||'image/png',data:await toB64(f)}});
   const tryList=goodModel?[goodModel]:AI_MODELS;
   let res=null,last=null;
+  const t0=Date.now();
   for(const name of tryList){
+    window.dispatchEvent(new CustomEvent('ai-step',{detail:{model:name,t0}}));
     try{
       const gc={responseMimeType:'application/json',temperature:0};
       if(thinkOk&&/gemini-3/.test(name))gc.thinkingConfig={thinkingLevel:'LOW'};
-      const m=getGenerativeModel(aiInst,{model:name,generationConfig:gc},{timeout:90000});
+      const m=getGenerativeModel(aiInst,{model:name,generationConfig:gc},{timeout:30000});
       try{res=await m.generateContent(parts)}
       catch(e1){const t1=String(e1&&e1.message||e1);
-        if(gc.thinkingConfig&&/400/.test(t1)&&/thinking/i.test(t1)){thinkOk=false;delete gc.thinkingConfig;res=await getGenerativeModel(aiInst,{model:name,generationConfig:gc},{timeout:90000}).generateContent(parts)}
+        if(gc.thinkingConfig&&/400/.test(t1)&&/thinking/i.test(t1)){thinkOk=false;delete gc.thinkingConfig;res=await getGenerativeModel(aiInst,{model:name,generationConfig:gc},{timeout:30000}).generateContent(parts)}
         else throw e1}
       goodModel=name;break}
     catch(e){last=e;console.warn('[AI]',name,e);
       const msg=String((e&&e.message)||e)+' '+JSON.stringify((e&&e.customErrorData)||{});
       if(/genai config/i.test(msg))break;
-      if(/\b50[03]\b|high demand|overloaded|UNAVAILABLE|try again later/i.test(msg))continue;
+      if(/\b50[03]\b|high demand|overloaded|UNAVAILABLE|try again later|timeout|timed out|abort/i.test(msg))continue;
       if(/404|not.?found|NOT_FOUND|is not supported|unsupported model|no longer available/i.test(msg))continue;
       break}}
   if(!res){const e=last||{};const m=(e.code?e.code+' · ':'')+String(e.message||e)+(e.customErrorData?' · '+JSON.stringify(e.customErrorData).slice(0,200):'');
@@ -1248,7 +1250,7 @@ function ocrReset(){if(ocrCtl)ocrCtl.abort();ocrCtl=null;const o=$('#ocr');o.hid
 function ocrCodeMsg(c){
   if(c==='ai_disabled')return'AI 이미지 인식이 아직 켜져 있지 않아요. Firebase 콘솔 → AI Logic에서 Gemini Developer API를 사용 설정해 주세요.';
   if(c==='ai_error')return'AI가 이미지를 읽지 못했어요. 잠시 후 다시 붙여넣어 주세요.';
-  if(c==='ai_timeout')return'AI 응답이 90초 넘게 없어서 멈췄어요. 이미지를 줄이거나 잠시 후 다시 시도해 주세요.';
+  if(c==='ai_timeout')return'AI가 여러 모델로 시도했지만 모두 30초 안에 답하지 않았어요. Google 쪽 혼잡일 가능성이 커요. 잠시 후 다시 시도해 주세요.';
   if(c==='not_granted')return'Claude 사용이 허용되지 않아 이미지를 읽지 못했어요. 페이지를 다시 열고 허용 창에서 허용해 주세요.';
   if(c==='images_unavailable'||c==='not_declared')return'AI 연결을 불러오지 못했어요. 페이지를 새로고침해 주세요.';
   if(c==='image_rejected')return'이미지를 열 수 없어요. PNG·JPG 캡처인지, 20MB 이하인지 확인해 주세요.';
@@ -1523,6 +1525,12 @@ function setupDocTest(){
     catch(e){st.textContent=ocrCodeMsg(e&&e.code)+(e&&e.message&&e.code!=='invalid_json'?' [상세: '+String(e.message).slice(0,320)+']':'')}
     finally{go.disabled=!files.length}});
 }
+
+/* ---------- AI progress: which model, how many seconds ---------- */
+(function(){let cur=null,iv=null;
+  window.addEventListener('ai-step',e=>{cur=e.detail;clearInterval(iv);
+    const paint=()=>{for(const id of ['#ocrSt','#docSt']){const el=$(id);if(el&&el.querySelector('.spin')){let s=el.querySelector('.aistep');if(!s){s=document.createElement('span');s.className='aistep';s.style.cssText='display:block;margin-top:4px;color:var(--muted);font-size:12px';el.appendChild(s)}s.textContent=`${cur.model} 모델로 읽는 중 · ${Math.round((Date.now()-cur.t0)/1000)}초`}}};
+    paint();iv=setInterval(()=>{if(!document.querySelector('#ocrSt .spin,#docSt .spin')){clearInterval(iv);return}paint()},1000)});})();
 
 /* ---------- boot ---------- */
 function setLive(state,text){const l=$('#live');l.classList.toggle('on',state);$('#liveText').textContent=text}
