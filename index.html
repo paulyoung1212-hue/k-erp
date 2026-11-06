@@ -675,7 +675,7 @@ async function profiles(ids){
   return out}
 
 /* Image → rows: the page sends its own prompt and the images, and expects JSON back. */
-const AI_MODELS=[AI_MODEL,'gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash'];
+const AI_MODELS=[AI_MODEL,'gemini-3.5-flash','gemini-3.7-flash','gemini-3.5-flash-lite','gemini-2.5-flash'];
 let aiInst=null,goodModel=null,thinkOk=true;
 const toB64=f=>new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=bad;r.readAsDataURL(f)});
 let relayUrl;
@@ -709,6 +709,7 @@ async function readTable(prompt,files){
     catch(e){last=e;console.warn('[AI]',name,e);
       const msg=String((e&&e.message)||e)+' '+JSON.stringify((e&&e.customErrorData)||{});
       if(/genai config/i.test(msg))break;
+      if(/\b50[03]\b|high demand|overloaded|UNAVAILABLE|try again later/i.test(msg))continue;
       if(/404|not.?found|NOT_FOUND|is not supported|unsupported model|no longer available/i.test(msg))continue;
       break}}
   if(!res){const e=last||{};const m=(e.code?e.code+' · ':'')+String(e.message||e)+(e.customErrorData?' · '+JSON.stringify(e.customErrorData).slice(0,200):'');
