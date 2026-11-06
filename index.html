@@ -1209,7 +1209,7 @@ async function readImages(files){
   }catch(e){
     if(ctl!==ocrCtl)return;
     if(e&&e.code==='cancelled'){st.textContent='이미지 읽기를 중지했어요.';}
-    else{o.classList.add('bad');st.textContent=ocrCodeMsg(e&&e.code)}
+    else{o.classList.add('bad');st.textContent=ocrCodeMsg(e&&e.code)+(e&&e.message&&e.code!=='invalid_json'?' [상세: '+String(e.message).slice(0,180)+']':'')}
   }finally{if(ctl===ocrCtl){$('#ocrStop').hidden=true;ocrCtl=null;updImpInfo()}}}
 $('#ocrStop').addEventListener('click',()=>{if(ocrCtl)ocrCtl.abort()});
 $('#impGo').addEventListener('click',async()=>{
