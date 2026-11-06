@@ -1,0 +1,34 @@
+rules_version = '2';
+// K ERP · 자금 일정표 보안 규칙
+// - 최종관리자(아래 이메일)는 항상 관리자이며, 다른 사람을 승인/해제합니다.
+// - 승인된 관리자(members/{uid}.role == 'admin')만 자금 데이터를 읽고 씁니다.
+// - 로그인한 누구나 자기 접근 요청만 남길 수 있습니다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOwner() {
+      return signedIn() && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in ['paulyoung1212@gmail.com'];
+    }
+    function isAdmin() {
+      return isOwner() || (signedIn()
+        && exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    match /entries/{id}  { allow read, write: if isAdmin(); }
+    match /rules/{id}    { allow read, write: if isAdmin(); }
+    match /settings/{id} { allow read, write: if isAdmin(); }
+
+    match /members/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isOwner();
+    }
+    match /accessRequests/{uid} {
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'name', 'at']);
+      allow read: if isAdmin();
+      allow delete: if isOwner();
+    }
+  }
+}
