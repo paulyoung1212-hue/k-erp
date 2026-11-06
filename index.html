@@ -502,7 +502,12 @@ textarea{width:100%;min-height:120px;border:1px solid var(--line-strong);border-
             <option value="기타 문서">기타</option>
           </select>
           <button class="btn primary" type="button" id="docGo" disabled>인식 시작</button>
-          <span class="small" id="docFiles">파일을 고르거나 이 칸에 붙여넣기(Ctrl+V)</span>
+          <button class="btn sm" type="button" id="docClear" hidden>비우기</button>
+        </div>
+        <div id="docDrop" tabindex="0" role="button" aria-label="이미지를 붙여넣거나 끌어다 놓는 칸" style="border:2px dashed var(--line-strong);border-radius:10px;padding:18px 14px;text-align:center;color:var(--muted);background:var(--surface-2);outline-offset:2px">
+          <b style="color:var(--ink)">Ctrl + V</b>로 캡처를 바로 붙여넣거나, 파일을 여기로 끌어다 놓으세요
+          <div id="docThumbs" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px"></div>
+          <div class="small" id="docFiles" style="margin-top:6px"></div>
         </div>
         <div class="small" id="docSt" role="status"></div>
         <div id="docOut" hidden style="display:flex;flex-direction:column;gap:12px">
@@ -1464,9 +1469,27 @@ $('#fab').addEventListener('click',()=>{if(canWrite)openEditDlg(null,viewMode===
 /* ---------- temporary: document OCR test ---------- */
 function setupDocTest(){
   const box=$('#docTest');box.hidden=false;let files=[];
-  const show=()=>{$('#docFiles').textContent=files.length?files.map(f=>f.name||'붙여넣은 이미지').join(', '):'파일을 고르거나 이 칸에 붙여넣기(Ctrl+V)';$('#docGo').disabled=!files.length};
-  $('#docFile').addEventListener('change',e=>{files=[...e.target.files].slice(0,6);e.target.value='';show()});
-  box.addEventListener('paste',e=>{const im=[...(e.clipboardData&&e.clipboardData.files||[])].filter(f=>/^image\/|pdf/.test(f.type));if(im.length){e.preventDefault();files=im.slice(0,6);show()}});
+  const ok=f=>/^image\/|pdf/.test(f.type);
+  const show=()=>{
+    $('#docFiles').textContent=files.length?`${files.length}개 · `+files.map(f=>f.name&&f.name!=='image.png'?f.name:'붙여넣은 이미지').join(', '):'';
+    $('#docThumbs').innerHTML='';files.forEach(f=>{if(/^image\//.test(f.type)){const im=document.createElement('img');im.alt='';im.src=URL.createObjectURL(f);im.style.cssText='height:72px;border-radius:6px;border:1px solid var(--line)';$('#docThumbs').appendChild(im)}});
+    $('#docGo').disabled=!files.length;$('#docClear').hidden=!files.length};
+  const add=list=>{const fl=[...list].filter(ok);if(!fl.length)return false;files=files.concat(fl).slice(0,6);show();$('#docTestDetails').open=true;return true};
+  $('#docFile').addEventListener('change',e=>{add(e.target.files);e.target.value=''});
+  $('#docClear').addEventListener('click',()=>{files=[];show();$('#docOut').hidden=true;$('#docSt').textContent=''});
+  // Ctrl+V anywhere while this panel is open (unless typing in a field or another dialog is open)
+  document.addEventListener('paste',e=>{
+    if(!$('#docTestDetails').open)return;
+    const t=e.target;if(t&&t.closest&&t.closest('input,textarea,[contenteditable=true],dialog[open],.dialog'))return;
+    if(document.querySelector('dialog[open]'))return;
+    for(const id of ['#importDlg','#editDlg']){const d=$(id);if(d&&!d.hidden)return}
+    const fs=[...(e.clipboardData&&e.clipboardData.files||[])];
+    if(add(fs)){e.preventDefault();toast('이미지를 붙여넣었어요')}});
+  const dz=$('#docDrop');
+  dz.addEventListener('click',()=>dz.focus());
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.style.borderColor='var(--accent)'});
+  dz.addEventListener('dragleave',()=>{dz.style.borderColor=''});
+  dz.addEventListener('drop',e=>{e.preventDefault();dz.style.borderColor='';add(e.dataTransfer.files)});
   $('#docCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('#docText').textContent);toast('복사했어요')}catch(_){toast('복사하지 못했어요')}});
   $('#docGo').addEventListener('click',async()=>{
     const go=$('#docGo'),st=$('#docSt');go.disabled=true;$('#docOut').hidden=true;
