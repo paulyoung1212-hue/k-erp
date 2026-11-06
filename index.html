@@ -635,18 +635,27 @@ async function profiles(ids){
   return out}
 
 /* Image → rows: the page sends its own prompt and the images, and expects JSON back. */
-let model=null;
+const AI_MODELS=[AI_MODEL,'gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash'];
+let aiInst=null,goodModel=null;
 const toB64=f=>new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=bad;r.readAsDataURL(f)});
 async function readTable(prompt,files){
-  if(!model){const ai=getAI(app,{backend:new GoogleAIBackend()});model=getGenerativeModel(ai,{model:AI_MODEL,generationConfig:{responseMimeType:'application/json',temperature:0}})}
+  if(!aiInst)aiInst=getAI(app,{backend:new GoogleAIBackend()});
   const parts=[{text:prompt}];
   for(const f of files)parts.push({inlineData:{mimeType:f.type||'image/png',data:await toB64(f)}});
-  let res;
-  try{res=await model.generateContent(parts)}
-  catch(e){const m=String(e&&e.message||e);
+  const tryList=goodModel?[goodModel]:AI_MODELS;
+  let res=null,last=null;
+  for(const name of tryList){
+    try{
+      const m=getGenerativeModel(aiInst,{model:name,generationConfig:{responseMimeType:'application/json',temperature:0}});
+      res=await m.generateContent(parts);goodModel=name;break}
+    catch(e){last=e;console.warn('[AI]',name,e);
+      const msg=String((e&&e.message)||e)+' '+JSON.stringify((e&&e.customErrorData)||{});
+      if(/404|not.?found|NOT_FOUND|is not supported|unsupported model|no longer available/i.test(msg))continue;
+      break}}
+  if(!res){const e=last||{};const m=(e.code?e.code+' · ':'')+String(e.message||e)+(e.customErrorData?' · '+JSON.stringify(e.customErrorData).slice(0,200):'');
     throw{code:/429|quota|RESOURCE_EXHAUSTED/i.test(m)?'rate_limited':/not been used|disabled|not enabled|PERMISSION_DENIED|403|api-not-enabled/i.test(m)?'ai_disabled':'ai_error',message:m}}
   const t=res.response.text();
-  try{return JSON.parse(t)}catch(_){const m=t.match(/\[[\s\S]*\]/);if(m){try{return JSON.parse(m[0])}catch(__){}}throw{code:'invalid_json'}}}
+  try{return JSON.parse(t)}catch(_){const mm=t.match(/\[[\s\S]*\]/);if(mm){try{return JSON.parse(mm[0])}catch(__){}}throw{code:'invalid_json'}}}
 
 /* One-time move of the data that lived in the Claude artifact. */
 async function importSeed(data,uid){
