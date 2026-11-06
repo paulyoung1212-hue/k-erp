@@ -485,6 +485,36 @@ textarea{width:100%;min-height:120px;border:1px solid var(--line-strong);border-
     </details>
   </section>
 
+  <section class="panel rec" id="docTest" hidden aria-label="문서 인식 테스트">
+    <details id="docTestDetails">
+      <summary><span class="rs-t">문서 인식 테스트</span><span class="rs-m">임시 메뉴 · 스캔 이미지나 PDF를 올려 글자와 핵심 항목을 뽑아 봅니다</span></summary>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <label class="btn" for="docFile">파일 고르기 (이미지·PDF)</label>
+          <input type="file" id="docFile" accept="image/*,application/pdf" multiple hidden>
+          <select id="docKind" aria-label="문서 종류" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit">
+            <option value="auto">문서 종류: 자동 판단</option>
+            <option value="등기부등본">등기부등본</option>
+            <option value="경매 서류(매각물건명세서·사건내역 등)">경매 서류</option>
+            <option value="계약서">계약서</option>
+            <option value="통장 거래내역">통장 거래내역</option>
+            <option value="영수증·세금계산서">영수증·세금계산서</option>
+            <option value="기타 문서">기타</option>
+          </select>
+          <button class="btn primary" type="button" id="docGo" disabled>인식 시작</button>
+          <span class="small" id="docFiles">파일을 고르거나 이 칸에 붙여넣기(Ctrl+V)</span>
+        </div>
+        <div class="small" id="docSt" role="status"></div>
+        <div id="docOut" hidden style="display:flex;flex-direction:column;gap:12px">
+          <div><b id="docType"></b> <span class="small" id="docNote"></span></div>
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">항목</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">값</th></tr></thead><tbody id="docFields"></tbody></table></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><b>전체 글자</b><button class="btn sm" type="button" id="docCopy">복사</button></div>
+          <pre id="docText" style="white-space:pre-wrap;word-break:break-word;margin:0;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);max-height:480px;overflow:auto;font:13px/1.6 var(--f-body)"></pre>
+        </div>
+      </div>
+    </details>
+  </section>
+
   <div class="toolbar">
     <div class="seg sm viewseg" role="radiogroup" aria-label="보기 방식">
       <label class="in"><input type="radio" name="viewMode" id="view-list" value="list" checked>목록</label>
@@ -1430,6 +1460,39 @@ try{if(localStorage.getItem('cf.view')==='cal')setView('cal')}catch(_){}
 
 $('#fab').addEventListener('click',()=>{if(canWrite)openEditDlg(null,viewMode==='cal'&&calSel?calSel:today())});
 
+
+/* ---------- temporary: document OCR test ---------- */
+function setupDocTest(){
+  const box=$('#docTest');box.hidden=false;let files=[];
+  const show=()=>{$('#docFiles').textContent=files.length?files.map(f=>f.name||'붙여넣은 이미지').join(', '):'파일을 고르거나 이 칸에 붙여넣기(Ctrl+V)';$('#docGo').disabled=!files.length};
+  $('#docFile').addEventListener('change',e=>{files=[...e.target.files].slice(0,6);e.target.value='';show()});
+  box.addEventListener('paste',e=>{const im=[...(e.clipboardData&&e.clipboardData.files||[])].filter(f=>/^image\/|pdf/.test(f.type));if(im.length){e.preventDefault();files=im.slice(0,6);show()}});
+  $('#docCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('#docText').textContent);toast('복사했어요')}catch(_){toast('복사하지 못했어요')}});
+  $('#docGo').addEventListener('click',async()=>{
+    const go=$('#docGo'),st=$('#docSt');go.disabled=true;$('#docOut').hidden=true;
+    st.innerHTML='<span class="spin" aria-hidden="true"></span>문서를 읽는 중입니다. 쪽수에 따라 10초~1분 걸려요.';
+    const kind=$('#docKind').value;
+    const prompt=`첨부한 스캔 문서(이미지 또는 PDF)를 읽어 JSON 객체 하나로만 답하세요.
+형식: {"docType":"문서 종류","fields":[{"label":"항목명","value":"값","unsure":false}],"text":"문서 전체 글자"}
+규칙:
+- ${kind==='auto'?'docType에는 문서 종류를 판단해 적으세요(예: 등기사항전부증명서, 매각물건명세서, 매매계약서).':'이 문서는 '+kind+'입니다. 그 문서에서 중요한 항목 위주로 뽑으세요.'}
+- fields에는 사건번호, 소재지(부동산 표시), 소유자, 채권자·채무자, 채권최고액, 보증금, 계약금·잔금, 날짜, 금액, 접수번호처럼 업무에 필요한 핵심 항목을 문서에 있는 것만 뽑습니다. 등기부등본이면 갑구·을구의 현재 유효한 권리를 순위번호와 함께 항목으로 넣으세요.
+- text에는 문서의 글자를 빠짐없이 원래 순서대로 옮깁니다. 표는 칸을 " | "로 구분해 줄 단위로 적습니다.
+- 흐려서 확실하지 않은 값은 unsure를 true로 하고 text에서는 글자 뒤에 (?)를 붙입니다.
+- 문서에 없는 내용을 추측해서 만들지 마세요.`;
+    try{
+      const r=await window.FB.readTable(prompt,files);
+      const o=Array.isArray(r)?{fields:r}:(r||{});
+      $('#docType').textContent=o.docType||'문서';
+      const fl=Array.isArray(o.fields)?o.fields:[];
+      $('#docNote').textContent=fl.some(f=>f.unsure)?'· 확실하지 않은 값은 노란색으로 표시했어요':'';
+      $('#docFields').innerHTML=fl.map(f=>`<tr${f.unsure?' style="background:var(--today)"':''}><td style="padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top">${esc(f.label)}</td><td style="padding:6px 8px;border-bottom:1px solid var(--line)">${esc(f.value)}${f.unsure?' (?)':''}</td></tr>`).join('')||'<tr><td colspan="2" class="small" style="padding:6px 8px">뽑은 항목이 없어요</td></tr>';
+      $('#docText').textContent=o.text||'';
+      $('#docOut').hidden=false;st.textContent=`${files.length}개 파일을 읽었어요. 원본과 꼭 대조해 주세요.`}
+    catch(e){st.textContent=ocrCodeMsg(e&&e.code)+(e&&e.message&&e.code!=='invalid_json'?' [상세: '+String(e.message).slice(0,320)+']':'')}
+    finally{go.disabled=!files.length}});
+}
+
 /* ---------- boot ---------- */
 function setLive(state,text){const l=$('#live');l.classList.toggle('on',state);$('#liveText').textContent=text}
 function banner(msg,warn){const b=$('#banner');b.className='notice'+(warn?' warn':'');b.textContent=msg;b.hidden=!msg}
@@ -1473,6 +1536,7 @@ function lockWrite(){canWrite=false;$('#fab').hidden=true;$('#addPanel').hidden=
     db.collection('rules').onSnapshot(snap=>{rules=snap.docs.filter(d=>d.exists).map(d=>({id:d.id,...d.data()}));rulesLoaded=true;renderRules();if(loaded)render()},()=>{rulesLoaded=true;renderRules()});
     db.doc('settings/recur').onSnapshot(s=>{const h=s.exists?+s.data().horizon:2;horizon=h>0?h:2;$('#horizon').value=String(horizon);if(loaded)render()},()=>{});
     renderSync();
+    setupDocTest();
     if(FB.isOwner(u))ownerTools(FB);
   });
 
